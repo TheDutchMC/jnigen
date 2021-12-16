@@ -1,0 +1,21 @@
+[package]
+name = "jnigen"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde_json = "1.0.73"
+log = "0.4.14"
+env_logger = "0.9.0"
+anyhow = "1.0.51"
+quote = "1.0.10"
+proc-macro2 = "1.0.34"
+convert_case = "0.4.0"
+structopt = "0.3.25"
+syn = "1.0.82"
+
+[dependencies.serde]
+version = "1.0.131"
+features = ["derive"]
