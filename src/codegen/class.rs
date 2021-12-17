@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use convert_case::{Case, Casing};
+use log::debug;
 use quote::{format_ident, quote};
 use proc_macro2::{Ident, TokenStream};
 use crate::codegen::{gen_jni_signature, gen_method_signature};
@@ -9,16 +12,70 @@ pub fn class_def(def: &Class) -> TokenStream {
     let class_ident = format_ident!("{}", name);
 
     let struct_def = gen_struct(&class_ident);
+
+    // We need to rename duplicate methods
+    // Java supports overloading, Rust does not
+    let mut methods = Vec::with_capacity(def.methods.len());
+    let mut method_names = Vec::with_capacity(def.methods.len());
+    for method in &def.methods {
+        let mut method = method.clone();
+
+        if method_names.contains(&method.name) {
+            let mut index = 0;
+            let mut new_name = method.name.clone();
+            while method_names.contains(&new_name) {
+                new_name = format!("{}_{}", &method.name, index);
+                index += 1;
+            }
+
+            method.name = new_name;
+        }
+
+        method_names.push(method.name.clone());
+        methods.push(method);
+    }
+
     let methods_owned = def.methods.iter()
         .filter(|f| f.from_interface.is_none())
+        .filter(|f| !f.name.contains("$"))
         .map(|f| gen_method(f))
         .collect::<Vec<_>>();
+
+    let interface_methods = def.methods.iter()
+        .filter(|f| f.from_interface.is_some())
+        .filter(|f| !f.name.contains("$"))
+        .collect::<Vec<_>>();
+    let mut methods_per_interface: HashMap<String, Vec<&Method>> = HashMap::new();
+    for method in interface_methods {
+        let interface = method.from_interface.as_ref().unwrap()
+            .replace(".", "::");
+        methods_per_interface.entry(interface).and_modify(|f| f.push(method)).or_insert(vec![method]);
+    }
+
+    let trait_impls: Vec<_> = methods_per_interface.iter()
+        .map(|(name, methods)| gen_trait_impl(name, methods, &class_ident))
+        .collect();
 
     quote! {
         #struct_def
 
         impl<'a> #class_ident<'a> {
             #(#methods_owned)*
+        }
+
+        #(#trait_impls)*
+    }
+}
+
+fn gen_trait_impl(name: &str, methods: &Vec<&Method>, struct_ident: &Ident) -> TokenStream {
+    let method_impls: Vec<_> = methods.iter()
+        .map(|f| gen_method(f))
+        .collect();
+
+    let path = syn::parse_str::<syn::Path>(name).expect("Failed to parse");
+    quote! {
+        impl<'a> #path<'a> for #struct_ident<'a> {
+            #(#method_impls)*
         }
     }
 }
